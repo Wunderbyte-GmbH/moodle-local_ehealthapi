@@ -10,7 +10,7 @@ use moodle_exception;
 use stdClass;
 
 defined('MOODLE_INTERNAL') || die();
-
+require_once($CFG->dirroot . '/user/profile/lib.php');
 
 class api {
 
@@ -20,7 +20,7 @@ class api {
      * @param base $event
      * @return string an empty string on success or the error as string.
      */
-    public static function transfer_certificate(base $event): string {
+    public static function transfer_certificate(\core\event\course_completed $event) {
         global $DB;
         $data = $event->get_data();
         $courseid = $data['courseid'];
@@ -28,21 +28,10 @@ class api {
         $user = core_user::get_user($userid);
         profile_load_custom_fields($user);
         $customcoursefields = self::get_course_customfields($courseid);
-        $course = cache::make('core', 'course')->get($courseid);
-        // Check if the course object exists and has a shortname
-        if ($course && property_exists($course, 'shortname')) {
-            $shortname = $course->shortname;
-        } else {
-            $course = get_course($courseid);
-            if ($course) {
-                $shortname = $course->shortname;
-            } else {
-                throw new moodle_exception("cannotfindcourse");
-            }
-        }
 
         // Get relevant data and check if course has certificate.
         $mods = get_course_mods($courseid);
+        $shortname = $DB->get_field('course', 'shortname', ['id' => $courseid]);
         $certused = false;
         foreach ($mods as $mod) {
             if ($mod->modname = "coursecertificate"){
@@ -59,8 +48,8 @@ class api {
         $timestamp = strtotime($customcoursefields['courseenddate']);
         $enddate = date('Y-m-d', $timestamp);
         $studyhours = $customcoursefields['crhours'];
-        $now = time();
-        $issuedate = date('Y-m-d', $now);
+        $timecompleted = $DB->get_field('course_completions', 'timecompleted', ['id' => $data['objectid']]);
+        $issuedate = date('Y-m-d', $timecompleted);
         $usercertdata = [
             'pin' => $user->profile['pin'],
             'educationLevel_MKId' => '',
@@ -99,9 +88,9 @@ class api {
                     'relateduserid' => $userid,
             ]);
             $event->trigger();
-            return '';
+            // return '';
         } else {
-            return $error;
+            // return $error;
         }
     }
 

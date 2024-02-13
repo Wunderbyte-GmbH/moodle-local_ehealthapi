@@ -25,34 +25,32 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-$componentname = 'local_ehealthapi';
-
 // Default for users that have site config.
 if ($hassiteconfig) {
-    // Add the category to the local plugin branch.
-    $settings = new admin_settingpage($componentname . '_settings', '');
-    $ADMIN->add('localplugins', new admin_category($componentname, get_string('pluginname', $componentname)));
-    $ADMIN->add($componentname, $settings);
+    $componentname = 'local_ehealthapi';
+    $settings = new admin_settingpage($componentname,
+            get_string('pluginname', $componentname));
+    $ADMIN->add('localplugins', $settings);
 
     // Add API URL setting.
-    $settings->add(
-            new admin_setting_configtext(
-                    $componentname . '/apiurl',
-                    get_string('apiurl', $componentname),
-                    get_string('apiurl:description', $componentname),
-                    'https://example.com/api', // Default API URL
-                    PARAM_URL
-            )
+    $adminsetting = new admin_setting_configtext(
+            $componentname . '/apiurl',
+            get_string('apiurl', $componentname),
+            get_string('apiurl:description', $componentname),
+            'https://example.com/api',
+            PARAM_URL
     );
+    $adminsetting->plugin = $componentname;
+    $settings->add($adminsetting);
 
     // Add API token setting.
-    $settings->add(
-            new admin_setting_configtext(
+    $adminsetting = new admin_setting_configtext(
                     $componentname . '/apitoken',
                     get_string('apitoken', $componentname),
                     get_string('apitoken:description', $componentname),
-                    '', // Default API token
+                    '',
                     PARAM_TEXT
-            )
-    );
+            );
+    $adminsetting->plugin = $componentname;
+    $settings->add($adminsetting);
 }
