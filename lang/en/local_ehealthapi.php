@@ -30,3 +30,4 @@ $string['apiurl'] = 'API URL';
 $string['apiurl:description'] = 'Enter the URL for the API.';
 $string['apitoken'] = 'API Token';
 $string['apitoken:description'] = 'Enter the API token for authentication.';
+$string['transfer_completed'] = 'The course completion data was successfully transferred';

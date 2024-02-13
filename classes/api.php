@@ -1,10 +1,13 @@
 <?php
 
 namespace local_ehealthapi;
+use cache;
+use context_course;
 use core\event\base;
-use core_course\search\customfield;
-use core_courseformat\output\local\content\cm\cmname;
 use core_customfield\handler;
+use core_user;
+use moodle_exception;
+use stdClass;
 
 defined('MOODLE_INTERNAL') || die();
 
@@ -15,14 +18,28 @@ class api {
      * Transfer certificate to other platform via REST API
      *
      * @param base $event
-     * @return string empty if not cert is issued
+     * @return string an empty string on success or the error as string.
      */
     public static function transfer_certificate(base $event): string {
+        global $DB;
         $data = $event->get_data();
         $courseid = $data['courseid'];
         $userid = $data['relateduserid'];
-        $user = \core_user::get_user($userid);
+        $user = core_user::get_user($userid);
         profile_load_custom_fields($user);
+        $customcoursefields = self::get_course_customfields($courseid);
+        $course = cache::make('core', 'course')->get($courseid);
+        // Check if the course object exists and has a shortname
+        if ($course && property_exists($course, 'shortname')) {
+            $shortname = $course->shortname;
+        } else {
+            $course = get_course($courseid);
+            if ($course) {
+                $shortname = $course->shortname;
+            } else {
+                throw new moodle_exception("cannotfindcourse");
+            }
+        }
 
         // Get relevant data and check if course has certificate.
         $mods = get_course_mods($courseid);
@@ -33,22 +50,27 @@ class api {
             }
         }
         if (!$certused) {
-            return '';
+            return "The course has no certificate configured. So not transferring the course completion.";
         }
 
+        $startdate = $customcoursefields['coursestart'];
+        $timestamp = strtotime($startdate);
+        $startdateformatted = date('Y-m-d', $timestamp);
+        $timestamp = strtotime($customcoursefields['courseenddate']);
+        $enddate = date('Y-m-d', $timestamp);
+        $studyhours = $customcoursefields['crhours'];
+        $now = time();
+        $issuedate = date('Y-m-d', $now);
         $usercertdata = [
             'pin' => $user->profile['pin'],
             'educationLevel_MKId' => '',
-            'startDate' => '',
-            'endDate' => '',
-            'hoursOfStudy' => '',
-            'number' => '',
-            'naimenovaniyeKursa' => '',
-            'documentIssueDate' => '',
+            'startDate' => $startdateformatted,
+            'endDate' => $enddate,
+            'hoursOfStudy' => $studyhours,
+            'number' => $courseid,
+            'naimenovaniyeKursa' => $shortname,
+            'documentIssueDate' => $issuedate,
         ];
-
-        $json = json_encode($usercertdata);
-        $response = self::send_request($json);
         /**
          * {
          * "pin": "12508200001043",
@@ -61,8 +83,34 @@ class api {
          * "documentIssueDate": "2023-11-26"
          * }'
          */
+
+        $json = json_encode($usercertdata);
+        $error = self::send_request($json);
+        if (empty($error)) {
+            // Success.
+            $data = new stdClass();
+            $data->userid = $userid;
+            $data->timecreated = $now;
+            $data->completionid = $data['objectid'];
+            $id = $DB->insert_record('local_ehealthapi', $data);
+            $event = event\certificate_transferred::create([
+                    'context' => context_course::instance($courseid),
+                    'objectid' => $id,
+                    'relateduserid' => $userid,
+            ]);
+            $event->trigger();
+            return '';
+        } else {
+            return $error;
+        }
     }
 
+    /**
+     * Send API request using the settings in config.
+     *
+     * @param string $json
+     * @return string empty string on success error message on failure
+     */
     public static function send_request(string $json): string {
         $apiurl = get_config('local_ehealthapi', 'apiurl');
         $apitoken = get_config('local_ehealthapi', 'apitoken');
@@ -81,33 +129,37 @@ class api {
         ]);
 
         $response = curl_exec($curl);
+        if ($response) {
+            $return = self::validate_response($response, $curl);
+        } else {
+            $return = "There was an error communicating with the remote server. It may be down: ";
+            $return .= curl_error($curl) . curl_errno($curl);
+        }
         curl_close($curl);
-        return $response;
+        // When we have an empty string, the certificate was successfully transferred.
+        return $return;
     }
 
     /**
      * Check if entry exists in the JSON response.
      *
-     * @param string $response The JSON response from ERPNext.
-     * @return bool True if the entry exists, false otherwise.
+     * @param string $response The JSON response from api request.
+     * @param mixed $curl
+     * @return string empty on success or error message.
      */
-    public static function validate_response(string $response): bool {
-        // Decode the JSON response into an associative array.
-        $resparray = json_decode($response, true);
-        // Check if the response contains data.
-        if (isset($resparray['data'])) {
-            return true; // Entry exists or entry was successfully created.
+    public static function validate_response(string $response, $curl): string {
+        // When something did not work well, status 400 is returned and an error message.
+        $httpcode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+        // Request was successful.
+        if ($httpcode == "200") {
+            return "";
         }
-        // Check if the response contains an error message.
-        if (isset($resparray['exc_type'])) {
-            $this->errormessage = $resparray['exc_type'];
-            return false; // Entry does not exist (error).
+        // Something went wrong.
+        if ($httpcode == "400") {
+            return "There was an error encountered: " . $response;
         }
-        if (isset($resparray['exception'])) {
-            $this->errormessage = $resparray['exception'];
-            return false; // Entry does not exist (error).
-        }
-        return false;
+        // There might be other technical error codes we do not know.
+        return "Unknown error encountered. " . $response;
     }
 
     /**

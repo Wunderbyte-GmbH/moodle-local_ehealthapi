@@ -26,4 +26,22 @@ namespace local_ehealthapi\event;
  */
 class certificate_transferred extends \core\event\base {
 
+    protected function init() {
+        $this->data['crud'] = 'c';
+        $this->data['edulevel'] = self::LEVEL_OTHER;
+        $this->data['objecttable'] = 'local_ehealthapi';
+    }
+
+    public static function get_name() {
+        return get_string('transfer_completed', 'local_ehealthapi');
+    }
+
+    public function get_description() {
+        return "The course completion of course with id '{$this->courseid}' for user with id '{$this->userid}'
+        was successfully transferred.";
+    }
+
+    public function get_url() {
+        return new \moodle_url('/course/view.php', ['id' => $this->courseid]);
+    }
 }
