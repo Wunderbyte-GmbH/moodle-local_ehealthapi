@@ -1,9 +1,21 @@
 <?php
+// This file is part of Moodle - http://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 namespace local_ehealthapi;
-use cache;
 use context_course;
-use core\event\base;
 use core_customfield\handler;
 use core_user;
 use moodle_exception;
@@ -17,14 +29,13 @@ class api {
     /**
      * Transfer certificate to other platform via REST API
      *
-     * @param base $event
-     * @return string an empty string on success or the error as string.
+     * @param array $eventdata
+     * @return void
      */
-    public static function transfer_certificate(\core\event\course_completed $event) {
+    public static function transfer_certificate(array $eventdata): void {
         global $DB;
-        $data = $event->get_data();
-        $courseid = $data['courseid'];
-        $userid = $data['relateduserid'];
+        $courseid = $eventdata['courseid'];
+        $userid = $eventdata['relateduserid'];
         $user = core_user::get_user($userid);
         profile_load_custom_fields($user);
         $customcoursefields = self::get_course_customfields($courseid);
@@ -39,7 +50,8 @@ class api {
             }
         }
         if (!$certused) {
-            return "The course has no certificate configured. So not transferring the course completion.";
+            $error = "The course has no certificate configured. So not transferring the course completion.";
+            throw new moodle_exception('error', '', '', null, $error);
         }
 
         $startdate = $customcoursefields['coursestart'];
@@ -48,11 +60,11 @@ class api {
         $timestamp = strtotime($customcoursefields['courseenddate']);
         $enddate = date('Y-m-d', $timestamp);
         $studyhours = $customcoursefields['crhours'];
-        $timecompleted = $DB->get_field('course_completions', 'timecompleted', ['id' => $data['objectid']]);
+        $timecompleted = $DB->get_field('course_completions', 'timecompleted', ['id' => $eventdata['objectid']]);
         $issuedate = date('Y-m-d', $timecompleted);
         $usercertdata = [
             'pin' => $user->profile['pin'],
-            'educationLevel_MKId' => '',
+            'educationLevel_MKId' => 12,
             'startDate' => $startdateformatted,
             'endDate' => $enddate,
             'hoursOfStudy' => $studyhours,
@@ -61,6 +73,7 @@ class api {
             'documentIssueDate' => $issuedate,
         ];
         /**
+         * Sample json:
          * {
          * "pin": "12508200001043",
          * "educationLevel_MKId": 12,
@@ -79,18 +92,17 @@ class api {
             // Success.
             $data = new stdClass();
             $data->userid = $userid;
-            $data->timecreated = $now;
-            $data->completionid = $data['objectid'];
+            $data->timecreated = time();
+            $data->completionid = $eventdata['objectid'];
             $id = $DB->insert_record('local_ehealthapi', $data);
-            $event = event\certificate_transferred::create([
+            $eventjson = event\certificate_transferred::create([
                     'context' => context_course::instance($courseid),
                     'objectid' => $id,
                     'relateduserid' => $userid,
             ]);
-            $event->trigger();
-            // return '';
+            $eventjson->trigger();
         } else {
-            // return $error;
+            throw new moodle_exception('error', '', '', null, $error);
         }
     }
 
@@ -101,6 +113,7 @@ class api {
      * @return string empty string on success error message on failure
      */
     public static function send_request(string $json): string {
+        $return = '';
         $apiurl = get_config('local_ehealthapi', 'apiurl');
         $apitoken = get_config('local_ehealthapi', 'apitoken');
         $curl = curl_init();
@@ -116,13 +129,14 @@ class api {
                 CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
                 CURLOPT_POSTFIELDS => $json,
         ]);
-
         $response = curl_exec($curl);
-        if ($response) {
+        // When response is false. There is a problem with the server.
+        if ($response !== false) {
             $return = self::validate_response($response, $curl);
         } else {
             $return = "There was an error communicating with the remote server. It may be down: ";
-            $return .= curl_error($curl) . curl_errno($curl);
+            $info = curl_getinfo($curl);
+            $return .= curl_error($curl) . curl_errno($curl) . var_export($info, true);
         }
         curl_close($curl);
         // When we have an empty string, the certificate was successfully transferred.
@@ -140,12 +154,12 @@ class api {
         // When something did not work well, status 400 is returned and an error message.
         $httpcode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
         // Request was successful.
-        if ($httpcode == "200") {
-            return "";
+        if ($httpcode == "200" || $httpcode === 200) {
+            return '';
         }
         // Something went wrong.
         if ($httpcode == "400") {
-            return "There was an error encountered: " . $response;
+            return "There following error occured during transfer of data: " . $response;
         }
         // There might be other technical error codes we do not know.
         return "Unknown error encountered. " . $response;

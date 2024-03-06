@@ -28,6 +28,6 @@ defined('MOODLE_INTERNAL') || die();
 $observers = [
         [
                 'eventname' => 'core\event\course_completed',
-                'callback' => '\local_ehealthapi\api::transfer_certificate',
+                'callback' => '\local_ehealthapi\task\transfer_certificate::instance',
         ],
 ];
