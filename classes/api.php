@@ -56,10 +56,8 @@ class api {
         }
 
         $startdate = $customcoursefields['coursestart'];
-        $timestamp = strtotime($startdate);
-        $startdateformatted = date('Y-m-d', $timestamp);
-        $timestamp = strtotime($customcoursefields['courseenddate']);
-        $enddate = date('Y-m-d', $timestamp);
+        $startdateformatted = date('Y-m-d', $startdate);
+        $enddate = date('Y-m-d', $customcoursefields['courseenddate']);
         $studyhours = $customcoursefields['crhours'];
         $timecompleted = $DB->get_field('course_completions', 'timecompleted', ['id' => $eventdata['objectid']]);
         $issuedate = date('Y-m-d', $timecompleted);
