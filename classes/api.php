@@ -39,6 +39,7 @@ class api {
         $user = core_user::get_user($userid);
         profile_load_custom_fields($user);
         $customcoursefields = self::get_course_customfields($courseid);
+        mtrace('Custom course field data:' . var_export($customcoursefields, true), PHP_EOL);
 
         // Get relevant data and check if course has certificate.
         $mods = get_course_mods($courseid);
