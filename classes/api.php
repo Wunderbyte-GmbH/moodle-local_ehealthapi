@@ -62,7 +62,7 @@ class api {
         $timecompleted = $DB->get_field('course_completions', 'timecompleted', ['id' => $eventdata['objectid']]);
         $issuedate = date('Y-m-d', $timecompleted);
         $usercertdata = [
-            'pin' => $user->profile['pin'],
+            'pin' => $user->profile['PIN'],
             'educationLevel_MKId' => 12,
             'startDate' => $startdateformatted,
             'endDate' => $enddate,
