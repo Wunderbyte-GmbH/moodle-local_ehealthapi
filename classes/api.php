@@ -85,7 +85,7 @@ class api {
          * "documentIssueDate": "2023-11-26"
          * }'
          */
-
+        mtrace(var_export($usercertdata, true), PHP_EOL);
         $json = json_encode($usercertdata);
         $error = self::send_request($json);
         if (empty($error)) {
